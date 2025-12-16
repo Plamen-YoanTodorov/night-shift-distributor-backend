@@ -19,16 +19,20 @@ export default async function uploadsRoutes(fastify: FastifyInstance) {
     const uploaded: any[] = []
 
     for await (const part of parts) {
+      // @ts-ignore 
       if (!part.file) continue
+      // @ts-ignore 
       const lower = part.filename?.toLowerCase() || ''
       if (!(lower.endsWith('.xlsx') || lower.endsWith('.xls'))) {
         return reply.status(400).send({ error: 'Only .xls/.xlsx files are allowed' })
       }
       const chunks: Buffer[] = []
+      // @ts-ignore 
       for await (const chunk of part.file) {
         chunks.push(chunk as Buffer)
       }
       const buffer = Buffer.concat(chunks)
+      // @ts-ignore 
       const record = saveUploadedFile(buffer, part.filename)
       uploaded.push(record)
     }

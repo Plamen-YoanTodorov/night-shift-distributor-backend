@@ -3,26 +3,28 @@ import path from 'path'
 import uploadsRoutes from './routes/uploads'
 import datasetsRoutes from './routes/datasets'
 import authRoutes from './routes/auth'
+import cors from "@fastify/cors"
 import './db'
 
-const PORT = process.env.PORT ? Number(process.env.PORT) : 4000
+const PORT = Number(process.env.PORT) || 8080
 
 async function start() {
   const app = Fastify({
     logger: true,
   })
 
-  // Simple CORS
-  app.addHook('onRequest', (req, reply, done) => {
-    reply.header('Access-Control-Allow-Origin', '*')
-    reply.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS')
-    reply.header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
-    if (req.method === 'OPTIONS') {
-      reply.status(204).send()
-      return
-    }
-    done()
-  })
+await app.register(cors, {
+  origin: [
+    'https://www.atconight.com',
+    'https://atconight.com',
+    'http://localhost:5173',
+    "https://atconight.pages.dev",
+  ],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With'],
+  // set this to true ONLY if you use cookies/sessions:
+  credentials: false,
+})
 
   app.get('/health', async () => ({ ok: true }))
 

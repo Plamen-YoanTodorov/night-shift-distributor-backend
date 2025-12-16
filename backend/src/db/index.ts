@@ -2,7 +2,7 @@ import Database from 'better-sqlite3'
 import fs from 'fs'
 import path from 'path'
 
-const dataDir = path.resolve(process.cwd(), 'data')
+const dataDir = path.resolve(process.env.DATA_DIR ?? path.join(process.cwd(), "data"))
 const uploadsDir = path.join(dataDir, 'uploads')
 fs.mkdirSync(uploadsDir, { recursive: true })
 
