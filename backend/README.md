@@ -20,7 +20,7 @@ npm install
 ```bash
 npm run dev
 ```
-API defaults to http://localhost:4000.
+API defaults to http://localhost:8080.
 
 ## Build & start
 ```bash
@@ -34,24 +34,24 @@ Data persists in `./data` (SQLite + uploads).
 
 ### Upload XLSX schedules
 ```bash
-curl -F "file=@./GrafikNK_1225.xlsx" http://localhost:4000/api/uploads
+curl -F "file=@./GrafikNK_1225.xlsx" http://localhost:8080/api/uploads
 ```
 
 ### List uploads
 ```bash
-curl http://localhost:4000/api/uploads
+curl http://localhost:8080/api/uploads
 ```
 
 ### Create dataset with uploads
 ```bash
-curl -X POST http://localhost:4000/api/datasets \
+curl -X POST http://localhost:8080/api/datasets \
   -H "Content-Type: application/json" \
   -d '{"name":"Dec 2025","uploadIds":[1,2]}'
 ```
 
 ### Save distributions for a dataset
 ```bash
-curl -X PUT http://localhost:4000/api/datasets/1/distributions \
+curl -X PUT http://localhost:8080/api/datasets/1/distributions \
   -H "Content-Type: application/json" \
   -d '[
     {"datasetId":1,"date":"2025-12-01","position":"TWR","worker":"Ivan","role":"stayer","isManual":false}
@@ -60,12 +60,12 @@ curl -X PUT http://localhost:4000/api/datasets/1/distributions \
 
 ### Load distributions for a dataset
 ```bash
-curl http://localhost:4000/api/datasets/1/distributions
+curl http://localhost:8080/api/datasets/1/distributions
 ```
 
 ### Download upload
 ```bash
-curl -O http://localhost:4000/api/uploads/1/download
+curl -O http://localhost:8080/api/uploads/1/download
 ```
 
 ## Notes
