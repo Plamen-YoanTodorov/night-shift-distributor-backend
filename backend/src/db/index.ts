@@ -46,6 +46,16 @@ CREATE TABLE IF NOT EXISTS distributions (
   createdAt TEXT NOT NULL,
   FOREIGN KEY (dataset_id) REFERENCES datasets(id) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS holidays (
+  date TEXT PRIMARY KEY,
+  createdAt TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS role_labels (
+  role TEXT PRIMARY KEY,
+  label TEXT NOT NULL
+);
 `)
 
 // Ensure a default dataset exists so global distribution saves do not violate FKs.
@@ -54,5 +64,12 @@ if (!defaultDataset) {
   const now = new Date().toISOString()
   db.prepare('INSERT INTO datasets (id, name, createdAt) VALUES (1, ?, ?)').run('default', now)
 }
+
+// Seed default role labels if missing
+const defaultLabels: Record<string, string> = { stayer: 'Stayer', goer1: 'Goer', goer2: 'Goer 2' }
+const upsertLabel = db.prepare(
+  'INSERT INTO role_labels (role, label) VALUES (?, ?) ON CONFLICT(role) DO UPDATE SET label=excluded.label'
+)
+Object.entries(defaultLabels).forEach(([role, label]) => upsertLabel.run(role, label))
 
 export { db, uploadsDir }

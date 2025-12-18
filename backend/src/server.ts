@@ -3,6 +3,8 @@ import path from 'path'
 import uploadsRoutes from './routes/uploads'
 import datasetsRoutes from './routes/datasets'
 import authRoutes from './routes/auth'
+import holidaysRoutes from './routes/holidays'
+import roleLabelsRoutes from './routes/labels'
 import cors from "@fastify/cors"
 import './db'
 
@@ -31,6 +33,8 @@ await app.register(cors, {
   app.register(authRoutes)
   app.register(uploadsRoutes)
   app.register(datasetsRoutes)
+  app.register(holidaysRoutes)
+  app.register(roleLabelsRoutes)
 
   try {
     await app.listen({ port: PORT, host: '0.0.0.0' })
