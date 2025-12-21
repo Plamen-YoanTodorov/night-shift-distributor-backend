@@ -5,9 +5,9 @@ import { requireAdmin } from './auth'
 type RoleKey = 'stayer' | 'goer1' | 'goer2'
 
 const defaults: Record<RoleKey, string> = {
-  stayer: 'Stayer',
-  goer1: 'Goer',
-  goer2: 'Goer 2',
+  stayer: 'III',
+  goer1: 'I',
+  goer2: 'II',
 }
 
 export default async function roleLabelsRoutes(fastify: FastifyInstance) {

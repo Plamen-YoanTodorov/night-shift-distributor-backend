@@ -5,6 +5,8 @@ import datasetsRoutes from './routes/datasets'
 import authRoutes from './routes/auth'
 import holidaysRoutes from './routes/holidays'
 import roleLabelsRoutes from './routes/labels'
+import studentsRoutes from './routes/students'
+import editorRoutes from './routes/editor'
 import cors from "@fastify/cors"
 import './db'
 
@@ -18,9 +20,12 @@ async function start() {
 await app.register(cors, {
   origin: [
     'https://www.atconight.com',
+    'https://www.staging.atconight.com',
     'https://atconight.com',
+    'https://staging.atconight.com',
     'http://localhost:5173',
-    "https://atconight.pages.dev",
+    "https://atco-night.pages.dev",
+    "https://dev.atco-night.pages.dev",
   ],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With'],
@@ -35,6 +40,8 @@ await app.register(cors, {
   app.register(datasetsRoutes)
   app.register(holidaysRoutes)
   app.register(roleLabelsRoutes)
+  app.register(studentsRoutes)
+  app.register(editorRoutes)
 
   try {
     await app.listen({ port: PORT, host: '0.0.0.0' })

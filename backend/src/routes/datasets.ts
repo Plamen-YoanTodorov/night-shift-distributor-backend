@@ -1,10 +1,10 @@
 import { FastifyInstance } from 'fastify'
 import { db } from '../db'
 import type { DistributionEntry } from '../types'
-import { requireAdmin } from './auth'
+import { requireAdmin, requireEditorOrAdmin } from './auth'
 
 export default async function datasetsRoutes(fastify: FastifyInstance) {
-  fastify.put('/api/distributions', { preHandler: requireAdmin }, async (req, reply) => {
+  fastify.put('/api/distributions', { preHandler: requireEditorOrAdmin }, async (req, reply) => {
     const entries: any[] = Array.isArray(req.body) ? (req.body as any[]) : []
     const now = new Date().toISOString()
     // Ensure a default dataset exists for FK integrity

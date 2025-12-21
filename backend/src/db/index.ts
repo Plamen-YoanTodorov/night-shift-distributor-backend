@@ -56,6 +56,13 @@ CREATE TABLE IF NOT EXISTS role_labels (
   role TEXT PRIMARY KEY,
   label TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS students (
+  name TEXT PRIMARY KEY,
+  startDate TEXT,
+  endDate TEXT,
+  createdAt TEXT NOT NULL
+);
 `)
 
 // Ensure a default dataset exists so global distribution saves do not violate FKs.
