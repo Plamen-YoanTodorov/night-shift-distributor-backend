@@ -7,6 +7,7 @@ import holidaysRoutes from './routes/holidays'
 import roleLabelsRoutes from './routes/labels'
 import studentsRoutes from './routes/students'
 import editorRoutes from './routes/editor'
+import schedulesRoutes from './routes/schedules'
 import cors from "@fastify/cors"
 import './db'
 
@@ -42,6 +43,7 @@ await app.register(cors, {
   app.register(roleLabelsRoutes)
   app.register(studentsRoutes)
   app.register(editorRoutes)
+  app.register(schedulesRoutes)
 
   try {
     await app.listen({ port: PORT, host: '0.0.0.0' })

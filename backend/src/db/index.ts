@@ -63,6 +63,17 @@ CREATE TABLE IF NOT EXISTS students (
   endDate TEXT,
   createdAt TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS schedules (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  position TEXT NOT NULL,
+  month TEXT NOT NULL, -- YYYY-MM
+  payload TEXT NOT NULL,
+  meta TEXT,
+  uploadedAt TEXT NOT NULL,
+  parserVersion TEXT,
+  UNIQUE(position, month)
+);
 `)
 
 // Ensure a default dataset exists so global distribution saves do not violate FKs.

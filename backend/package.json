@@ -14,9 +14,13 @@
   "dependencies": {
     "@fastify/cors": "^8.5.0",
     "@fastify/multipart": "^8.1.0",
+    "@ilovepdf/ilovepdf-nodejs": "^0.3.1",
+    "@types/pdf-parse": "^1.1.4",
     "better-sqlite3": "^9.6.0",
     "fastify": "^4.27.2",
-    "fastify-plugin": "^4.5.1"
+    "fastify-plugin": "^4.5.1",
+    "pdf-parse": "^1.1.1",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@flydotio/dockerfile": "^0.7.10",
