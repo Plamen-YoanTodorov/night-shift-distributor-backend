@@ -98,7 +98,7 @@ function pickPosition(val: string): Position | null {
 function allowedForRole(roleCell: unknown, position: Position) {
   const val = typeof roleCell === 'string' ? roleCell.trim() : ''
   if (val === '') return true
-  if (val.includes('РП-радарен и ЛКК')) return true
+  if (val.includes('РП-радарен и ЛКК') || val.includes('РП-РС')) return true
   if (position === 'TWR' && val.includes('РП-ЛКК')) return true
   if (position === 'APP' && val.includes('РП-радарен')) return true
   if (position === 'APP' && val.includes('РП-РС')) return true
