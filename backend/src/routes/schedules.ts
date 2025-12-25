@@ -10,6 +10,7 @@ import {
   saveParsedSchedule,
   getSchedule,
   listSchedules,
+  deleteAllSchedules,
 } from "../services/schedules";
 
 export default async function schedulesRoutes(fastify: FastifyInstance) {
@@ -78,4 +79,13 @@ export default async function schedulesRoutes(fastify: FastifyInstance) {
     const rows = listSchedules();
     reply.send(rows);
   });
+
+  fastify.post(
+    "/api/schedules/reset",
+    { preHandler: requireAdmin },
+    async (_req, reply) => {
+      deleteAllSchedules();
+      reply.send({ status: "ok" });
+    }
+  );
 }

@@ -61,3 +61,7 @@ export function listSchedules() {
     parserVersion: r.parserVersion,
   }));
 }
+
+export function deleteAllSchedules() {
+  db.prepare("DELETE FROM schedules").run();
+}
