@@ -421,3 +421,6 @@
 // export function parserVersion() {
 //   return '1.0.0'
 // }
+
+// new name split
+// const name = typeof nameCell?.v === 'string' ? nameCell.v.trim().split(/\s+/).slice(0, 3).map((word: string) => word[0].toUpperCase()).join(".") + "." : ''
