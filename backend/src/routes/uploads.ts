@@ -23,8 +23,8 @@ export default async function uploadsRoutes(fastify: FastifyInstance) {
       if (!part.file) continue
       // @ts-ignore 
       const lower = part.filename?.toLowerCase() || ''
-      if (!(lower.endsWith('.xlsx') || lower.endsWith('.xls') || lower.endsWith('.pdf'))) {
-        return reply.status(400).send({ error: 'Only .xls/.xlsx/.pdf files are allowed' })
+      if (!(lower.endsWith('.xlsx') || lower.endsWith('.xls') || lower.endsWith('.xlsm') || lower.endsWith('.pdf'))) {
+        return reply.status(400).send({ error: 'Only .xls/.xlsx/.xlsm/.pdf files are allowed' })
       }
       const chunks: Buffer[] = []
       // @ts-ignore 

@@ -24,6 +24,7 @@ export default async function schedulesRoutes(fastify: FastifyInstance) {
     async (req: FastifyRequest, reply: FastifyReply) => {
       const parts = req.parts();
       const uploaded: any[] = [];
+      const now = new Date().toISOString();
       for await (const part of parts) {
         // @ts-ignore
         if (!part.file) continue;
@@ -36,31 +37,52 @@ export default async function schedulesRoutes(fastify: FastifyInstance) {
         }
         const buffer = Buffer.concat(chunks);
         const parsed = await parseSchedule(buffer, filename);
-        const base = inferMonthYear(filename);
-        const month = computeMonth(parsed, base);
-        if (!month) {
-          return reply
-            .status(400)
-            .send({ error: "Unable to determine month from schedule" });
-        }
-        const position =
-          parsed.nightShifts[0]?.position || parsed.extraShifts[0]?.position;
-        if (!position) {
-          return reply
-            .status(400)
-            .send({ error: "Unable to determine position" });
-        }
-        saveParsedSchedule(position, month, parsed, {
-          originalName: filename,
-          uploadedAt: new Date().toISOString(),
+        // Group by position + month so whole-year files get split per month
+        type Bucket = { nightShifts: any[]; extraShifts: any[]; month: string; position: string };
+        const bucketMap = new Map<string, Bucket>();
+
+        const ensureBucket = (pos: string, month: string) => {
+          const key = `${pos}-${month}`;
+          if (!bucketMap.has(key)) {
+            bucketMap.set(key, { nightShifts: [], extraShifts: [], month, position: pos });
+          }
+          return bucketMap.get(key)!;
+        };
+
+        parsed.nightShifts.forEach((ns: any) => {
+          const month = ns.date.slice(0, 7);
+          const b = ensureBucket(ns.position, month);
+          b.nightShifts.push(ns);
         });
-        uploaded.push({
-          position,
-          month,
-          counts: {
-            night: parsed.nightShifts.length,
-            extra: parsed.extraShifts.length,
-          },
+
+        parsed.extraShifts.forEach((ex: any) => {
+          const month = ex.date.slice(0, 7);
+          const b = ensureBucket(ex.position, month);
+          b.extraShifts.push(ex);
+        });
+
+        if (bucketMap.size === 0) {
+          return reply
+            .status(400)
+            .send({ error: "Unable to determine position/month from schedule" });
+        }
+
+        bucketMap.forEach((bucket) => {
+          saveParsedSchedule(bucket.position, bucket.month, {
+            nightShifts: bucket.nightShifts,
+            extraShifts: bucket.extraShifts,
+          }, {
+            originalName: filename,
+            uploadedAt: now,
+          });
+          uploaded.push({
+            position: bucket.position,
+            month: bucket.month,
+            counts: {
+              night: bucket.nightShifts.length,
+              extra: bucket.extraShifts.length,
+            },
+          });
         });
       }
       if (!uploaded.length)

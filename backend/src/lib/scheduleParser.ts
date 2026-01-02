@@ -154,6 +154,64 @@ function tokenIsShift(code: string) {
   return /^[A-Za-zА-Яа-я0-9][A-Za-zА-Яа-я0-9\-/:]*$/.test(code) || code === '-'
 }
 
+// ============================
+// Whole-year sheet parser (ALL 2026)
+// ============================
+
+function parseWholeYearSheet(workbook: XLSX.WorkBook, filename: string) {
+  const target = workbook.SheetNames.find((n) => n.trim().toUpperCase() === 'ALL 2026')
+  if (!target) return null
+  const sheet = workbook.Sheets[target]
+  if (!sheet) return null
+
+  const yearMatch = target.match(/(\d{4})/) || filename.match(/(\d{4})/)
+  const year = yearMatch ? Number(yearMatch[1]) : 2026
+
+  const startColIdx = XLSX.utils.decode_col('D')
+  const endColIdx = XLSX.utils.decode_col('ND') // Dec 31
+  const datesByCol = new Map<number, string>()
+  for (let c = startColIdx; c <= endColIdx; c++) {
+    const offset = c - startColIdx // 0-based days from Jan 1
+    const date = isoDay(year, 1, 1 + offset)
+    datesByCol.set(c, date)
+  }
+
+  const rows = Array.from({ length: 30 }, (_, i) => 7 + i) // 7..36
+  const shifts = new Map<string, { date: string; position: Position; workers: Set<string>; source: string }>()
+  const extras: ExtraShift[] = []
+
+  rows.forEach((row) => {
+    const nameCell = sheet[`B${row}`]
+    const name = typeof nameCell?.v === 'string' ? nameCell.v.trim() : ''
+    if (!name) return
+    const position: Position = row <= 16 ? 'TWR' : 'APP'
+    for (let c = startColIdx; c <= endColIdx; c++) {
+      const date = datesByCol.get(c)
+      if (!date) continue
+      const col = XLSX.utils.encode_col(c)
+      const code = normalizeCode(sheet[`${col}${row}`]?.v)
+      if (!code) continue
+      if (NIGHT_CODES.includes(code)) {
+        const key = `${position}-${date}`
+        if (!shifts.has(key)) shifts.set(key, { date, position, workers: new Set(), source: filename })
+        shifts.get(key)!.workers.add(name)
+      }
+      if (EXTRA_SHIFT_CODES.includes(code)) {
+        extras.push({ name, date, code, position })
+      }
+    }
+  })
+
+  const nightShifts: NightShift[] = Array.from(shifts.values()).map((s) => ({
+    id: `${s.position}-${s.date}`,
+    date: s.date,
+    position: s.position,
+    workers: Array.from(s.workers),
+    source: filename,
+  }))
+  return { nightShifts, extraShifts: extras }
+}
+
 type ColumnRange = { start: number; end: number }
 function buildColumnRanges(header: string, daysInMonth: number, fallbackLen: number): ColumnRange[] {
   const ranges: ColumnRange[] = []
@@ -510,9 +568,11 @@ export async function parseSchedule(buffer: Buffer, filename: string) {
     const table = await parsePdfToTable(buffer, filename)
     return parsePdfTable(table, filename)
   }
-  if (lower.endsWith('.xls') || lower.endsWith('.xlsx')) {
-    // Detect layout: if BD3 has a value -> old layout; else new layout
+  if (lower.endsWith('.xls') || lower.endsWith('.xlsx') || lower.endsWith('.xlsm')) {
     const workbook = XLSX.read(buffer, { type: 'buffer' })
+    const wholeYear = parseWholeYearSheet(workbook, filename)
+    if (wholeYear) return wholeYear
+    // Detect layout: if BD3 has a value -> old layout; else new layout
     const sheetName = workbook.SheetNames[0]
     const sheet = workbook.Sheets[sheetName]
     const hasBD3 = sheet['BD3'] && sheet['BD3'].v
