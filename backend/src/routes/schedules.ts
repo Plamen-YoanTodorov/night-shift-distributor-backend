@@ -67,14 +67,36 @@ export default async function schedulesRoutes(fastify: FastifyInstance) {
             .send({ error: "Unable to determine position/month from schedule" });
         }
 
+        const monthsSet = new Set<string>();
+        bucketMap.forEach((b) => monthsSet.add(b.month));
+        const isWholeYear = monthsSet.size > 1;
+
         bucketMap.forEach((bucket) => {
-          saveParsedSchedule(bucket.position, bucket.month, {
-            nightShifts: bucket.nightShifts,
-            extraShifts: bucket.extraShifts,
-          }, {
-            originalName: filename,
-            uploadedAt: now,
-          });
+          if (isWholeYear) {
+            const existing = getSchedule(bucket.position, bucket.month);
+            if (existing) {
+              // Skip overwriting existing month when uploading baseline/whole-year file
+              uploaded.push({
+                position: bucket.position,
+                month: bucket.month,
+                skipped: true,
+                reason: "existing-schedule",
+              });
+              return;
+            }
+          }
+          saveParsedSchedule(
+            bucket.position,
+            bucket.month,
+            {
+              nightShifts: bucket.nightShifts,
+              extraShifts: bucket.extraShifts,
+            },
+            {
+              originalName: filename,
+              uploadedAt: now,
+            }
+          );
           uploaded.push({
             position: bucket.position,
             month: bucket.month,
