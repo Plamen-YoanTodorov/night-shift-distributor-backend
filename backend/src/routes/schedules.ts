@@ -12,6 +12,7 @@ import {
   getSchedule,
   listSchedules,
   deleteAllSchedules,
+  deleteScheduleMonth,
 } from "../services/schedules";
 import { db } from "../db";
 import type { DistributionEntry } from "../types";
@@ -424,6 +425,21 @@ export default async function schedulesRoutes(fastify: FastifyInstance) {
     async (_req, reply) => {
       deleteAllSchedules();
       reply.send({ status: "ok" });
+    }
+  );
+
+  fastify.delete(
+    "/api/schedules/month/:month",
+    { preHandler: requireAdmin },
+    async (req, reply) => {
+      const month = (req.params as any).month;
+      if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+        return reply.status(400).send({ error: "Invalid month format; expected YYYY-MM" });
+      }
+      deleteScheduleMonth(month);
+      // also clear distributions for that month
+      db.prepare("DELETE FROM distributions WHERE date LIKE ?").run(`${month}-%`);
+      reply.send({ status: "ok", month });
     }
   );
 }

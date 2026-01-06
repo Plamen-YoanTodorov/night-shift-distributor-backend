@@ -65,3 +65,7 @@ export function listSchedules() {
 export function deleteAllSchedules() {
   db.prepare("DELETE FROM schedules").run();
 }
+
+export function deleteScheduleMonth(month: string) {
+  db.prepare("DELETE FROM schedules WHERE month = ?").run(month);
+}
