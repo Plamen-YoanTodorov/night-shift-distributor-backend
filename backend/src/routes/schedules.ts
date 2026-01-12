@@ -1,6 +1,6 @@
 import { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import fastifyMultipart from "@fastify/multipart";
-import { requireAdmin } from "./auth";
+import { requireAdmin, requireEditorOrAdmin } from "./auth";
 import {
   parseSchedule,
   inferMonthYear,
@@ -418,6 +418,35 @@ export default async function schedulesRoutes(fastify: FastifyInstance) {
     const rows = listSchedules();
     reply.send(rows);
   });
+
+  fastify.put(
+    "/api/schedules/edit",
+    { preHandler: requireEditorOrAdmin },
+    async (req: FastifyRequest, reply: FastifyReply) => {
+      const body = (req.body as any) || {};
+      const month: string = body.month;
+      const schedules: {
+        position: "APP" | "TWR";
+        nightShifts: any[];
+        extraShifts: any[];
+      }[] = body.schedules || [];
+      if (!month || !schedules.length) {
+        return reply.status(400).send({ error: "month and schedules are required" });
+      }
+      const now = new Date().toISOString();
+      schedules.forEach((s) => {
+        const validNight = (s.nightShifts || []).filter((ns: any) => ns.date?.startsWith(month));
+        const validExtra = (s.extraShifts || []).filter((ex: any) => ex.date?.startsWith(month));
+        saveParsedSchedule(
+          s.position,
+          month,
+          { nightShifts: validNight, extraShifts: validExtra },
+          { originalName: "manual-edit", uploadedAt: now, importType: "manual-edit" }
+        );
+      });
+      reply.send({ saved: schedules.length });
+    }
+  );
 
   fastify.post(
     "/api/schedules/reset",
