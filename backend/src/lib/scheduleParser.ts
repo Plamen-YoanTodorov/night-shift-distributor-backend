@@ -95,13 +95,54 @@ function pickPosition(val: string): Position | null {
   return null
 }
 
+function pickVarnaPosition(val: string): Position | null {
+  const normalized = (val || '').replace(/\s+/g, ' ')
+  if (normalized.includes('РМ Варна ЛКК')) return 'TWR'
+  if (normalized.includes('РМ Варна ОКП')) return 'APP'
+  return null
+}
+
+function cellHasFill(cell: XLSX.CellObject | undefined) {
+  // In XLSX, colored cells usually carry a style object with fgColor / fill.
+  const s: any = cell && (cell as any).s
+  if (!s) return false
+  const fg = s.fgColor || (s.fill ? s.fill.fgColor : undefined)
+  if (!fg) return false
+  const rgb = (fg.rgb || '').toString().toLowerCase()
+  if (rgb && rgb !== 'ffffff' && rgb !== 'ffffffff' && rgb !== '00ffffff') return true
+  // Treat theme/indexed as colored only if not the default white (theme often denotes palette; we err conservative)
+  if (fg.indexed !== undefined && fg.indexed !== 64) return true
+  return false
+}
+
 function allowedForRole(roleCell: unknown, position: Position) {
   const val = typeof roleCell === 'string' ? roleCell.trim() : ''
   if (val === '') return true
-  if (val.includes('РП-радарен и ЛКК') || val.includes('РП-РС')) return true
-  if (position === 'TWR' && val.includes('РП-ЛКК')) return true
-  if (position === 'APP' && val.includes('РП-радарен')) return true
-  if (position === 'APP' && val.includes('РП-РС')) return true
+  const lower = val.toLowerCase()
+  // shared roles
+  if (lower.includes('рп-радарен и лкк') || lower.includes('рп-рс') || lower.includes('ръководител полети рс'))
+    return true
+  if (lower.includes('ръководител полети')) {
+    const hasLkk = lower.includes('лкк')
+    const hasRadar = lower.includes('радар')
+    const hasRs = lower.includes('рс')
+    if (position === 'TWR' && hasLkk) return true
+    if (position === 'APP' && (hasRadar || hasRs)) return true
+    // If ambiguous, allow (better to include than drop)
+    return true
+  }
+  // TWR variants
+  if (
+    position === 'TWR' &&
+    (lower.includes('рп-лкк') || lower.includes('ръководител полети лкк'))
+  )
+    return true
+  // APP variants
+  if (
+    position === 'APP' &&
+    (lower.includes('рп-радарен') || lower.includes('ръководител полети - радарен'))
+  )
+    return true
   return false
 }
 
@@ -399,6 +440,74 @@ function parseExcelNew(buf: Buffer, path: string) {
   return { nightShifts, extraShifts: extras }
 }
 
+// DOCX-converted XLSX layout (Varna LKK / OKP)
+function parseExcelDocxConverted(buf: Buffer, path: string) {
+  // Need styles to detect filled (colored) cells
+  const workbook = XLSX.read(buf, { type: 'buffer', cellStyles: true })
+  const sheetName = workbook.SheetNames[0]
+  const sheet = workbook.Sheets[sheetName]
+  if (!sheet) throw new Error('Sheet missing')
+  const base = inferMonthYear(path)
+  if (!base) throw new Error('Cannot infer month/year from filename')
+  const daysInMonth = new Date(base.year, base.month, 0).getDate()
+
+  const posCellX1 = typeof sheet['X1']?.v === 'string' ? (sheet['X1']!.v as string) : ''
+  const position =
+    pickVarnaPosition(posCellX1) ||
+    pickPosition(posCellX1) ||
+    pickPosition(typeof sheet['BD3']?.v === 'string' ? (sheet['BD3']!.v as string) : '')
+  if (!position) throw new Error('Position not detected in DOCX-converted Excel')
+
+  const startColIdx = XLSX.utils.decode_col('E') // day 1
+  const dayColIdx = (day: number) => (day === 1 ? startColIdx : startColIdx + day)
+
+  const shifts = new Map<string, { date: string; position: Position; workers: Set<string>; source: string }>()
+  const extras: ExtraShift[] = []
+
+  const consumeRow = (row: number) => {
+    const nameCell = sheet[`C${row}`]
+    const name = typeof nameCell?.v === 'string' ? nameCell.v.trim() : ''
+    if (!name) return false
+    const roleCell = sheet[`D${row}`]?.v
+    if (!allowedForRole(roleCell, position)) return false
+
+    for (let day = 1; day <= daysInMonth; day++) {
+      const col = XLSX.utils.encode_col(dayColIdx(day))
+      const cell = sheet[`${col}${row}`] as XLSX.CellObject | undefined
+      if (!cellHasFill(cell)) continue // only honor colored cells; uncolored are other position
+      const code = normalizeCode(cell?.v)
+      if (!code) continue
+      const date = isoDay(base.year, base.month, day)
+      if (NIGHT_CODES.includes(code)) {
+        const key = `${position}-${date}`
+        if (!shifts.has(key)) shifts.set(key, { date, position, workers: new Set(), source: path })
+        shifts.get(key)!.workers.add(name)
+      }
+      if (EXTRA_SHIFT_CODES.includes(code)) {
+        extras.push({ name, date, code, position })
+      }
+    }
+    return true
+  }
+
+  for (let row = 9; row < 200; row += 2) {
+    const ok = consumeRow(row)
+    if (!ok) continue
+  }
+
+  const nightShifts: NightShift[] = Array.from(shifts.values()).map((s) => ({
+    id: `${s.position}-${s.date}`,
+    date: s.date,
+    position: s.position,
+    workers: Array.from(s.workers),
+    source: path,
+  }))
+  if (!nightShifts.length && !extras.length) {
+    throw new Error('No colored shift cells found in DOCX-converted sheet')
+  }
+  return { nightShifts, extraShifts: extras }
+}
+
 // -------- PDF -> pseudo-Excel pipeline (does not touch the real XLS parser) --------
 
 type PdfRow = { name: string; duty: string; codes: string[] }
@@ -576,7 +685,10 @@ export async function parseSchedule(buffer: Buffer, filename: string) {
     const sheetName = workbook.SheetNames[0]
     const sheet = workbook.Sheets[sheetName]
     const hasBD3 = sheet['BD3'] && sheet['BD3'].v
-    return hasBD3 ? parseExcel(buffer, filename) : parseExcelNew(buffer, filename)
+    if (hasBD3) return parseExcel(buffer, filename)
+    const x1Val = typeof sheet['X1']?.v === 'string' ? (sheet['X1']!.v as string) : ''
+    const isVarna = pickVarnaPosition(x1Val) !== null
+    return isVarna ? parseExcelDocxConverted(buffer, filename) : parseExcelNew(buffer, filename)
   }
   throw new Error('Unsupported schedule format')
 }
