@@ -40,20 +40,38 @@ function parseExportedWorkbook(buffer: Buffer, filename: string) {
     }
   });
   if (!dateCols.length) return null;
-  const month = dateCols[0].date.slice(0, 7);
 
-  const buckets = new Map<
-    string,
-    { date: string; position: "APP" | "TWR"; workers: Set<string>; assignments: DistributionEntry[] }
-  >();
-  const extras: { name: string; date: string; code: string; position: "APP" | "TWR" }[] = [];
+  type Position = "APP" | "TWR";
+  type DayBucket = { date: string; position: Position; workers: Set<string> };
+  type MonthBucket = {
+    position: Position;
+    month: string;
+    days: Map<string, DayBucket>;
+    extraShifts: { name: string; date: string; code: string; position: Position }[];
+    assignments: DistributionEntry[];
+  };
 
-  const addBucket = (pos: "APP" | "TWR", date: string) => {
-    const key = `${pos}-${date}`;
-    if (!buckets.has(key)) {
-      buckets.set(key, { date, position: pos, workers: new Set(), assignments: [] });
+  const monthBuckets = new Map<string, MonthBucket>();
+  const ensureMonthBucket = (position: Position, date: string) => {
+    const month = date.slice(0, 7);
+    const key = `${position}-${month}`;
+    if (!monthBuckets.has(key)) {
+      monthBuckets.set(key, {
+        position,
+        month,
+        days: new Map<string, DayBucket>(),
+        extraShifts: [],
+        assignments: [],
+      });
     }
-    return buckets.get(key)!;
+    return monthBuckets.get(key)!;
+  };
+  const ensureDayBucket = (position: Position, date: string) => {
+    const monthBucket = ensureMonthBucket(position, date);
+    if (!monthBucket.days.has(date)) {
+      monthBucket.days.set(date, { date, position, workers: new Set() });
+    }
+    return monthBucket.days.get(date)!;
   };
 
   const detectRole = (text: string): DistributionEntry["role"] => {
@@ -79,16 +97,18 @@ function parseExportedWorkbook(buffer: Buffer, filename: string) {
         .map((p: string) => p.trim())
         .filter(Boolean);
       parts.forEach((p: string) => {
-        if (p.startsWith("Extra:")) {
-          const code = p.replace("Extra:", "").trim();
-          extras.push({ name: person, date, code, position: "APP" });
+        const extraMatch = p.match(/^Extra(?:\((APP|TWR)\))?\s*:\s*(.+)$/i);
+        if (extraMatch) {
+          const pos = (extraMatch[1]?.toUpperCase() === "TWR" ? "TWR" : "APP") as Position;
+          const code = extraMatch[2].trim();
+          const bucket = ensureMonthBucket(pos, date);
+          bucket.extraShifts.push({ name: person, date, code, position: pos });
           return;
         }
         const [posRaw, restRaw] = p.split(":");
-        const pos =
-          posRaw && posRaw.trim().toUpperCase() === "TWR" ? "TWR" : "APP";
-        const bucket = addBucket(pos, date);
-        bucket.workers.add(person);
+        const pos = (posRaw && posRaw.trim().toUpperCase() === "TWR" ? "TWR" : "APP") as Position;
+        ensureDayBucket(pos, date).workers.add(person);
+        const bucket = ensureMonthBucket(pos, date);
         const role = restRaw ? detectRole(restRaw) : "goer1";
         bucket.assignments.push({
           datasetId: 1,
@@ -102,31 +122,24 @@ function parseExportedWorkbook(buffer: Buffer, filename: string) {
     });
   });
 
-  const nightShifts = Array.from(buckets.values()).map((b) => ({
-    id: `${b.position}-${b.date}`,
-    date: b.date,
-    position: b.position,
-    workers: Array.from(b.workers),
-    source: filename,
+  const schedules = Array.from(monthBuckets.values()).map((bucket) => ({
+    position: bucket.position,
+    month: bucket.month,
+    payload: {
+      nightShifts: Array.from(bucket.days.values()).map((d) => ({
+        id: `${d.position}-${d.date}`,
+        date: d.date,
+        position: d.position,
+        workers: Array.from(d.workers),
+        source: filename,
+      })),
+      extraShifts: bucket.extraShifts,
+    },
+    assignments: bucket.assignments,
   }));
 
-  const byPos = new Map<string, { nightShifts: any[]; extraShifts: any[]; assignments: DistributionEntry[] }>();
-  nightShifts.forEach((ns) => {
-    if (!byPos.has(ns.position))
-      byPos.set(ns.position, { nightShifts: [], extraShifts: [], assignments: [] });
-    byPos.get(ns.position)!.nightShifts.push(ns);
-    const bucket = buckets.get(`${ns.position}-${ns.date}`);
-    if (bucket) {
-      byPos.get(ns.position)!.assignments.push(...bucket.assignments);
-    }
-  });
-  extras.forEach((ex) => {
-    if (!byPos.has(ex.position))
-      byPos.set(ex.position, { nightShifts: [], extraShifts: [], assignments: [] });
-    byPos.get(ex.position)!.extraShifts.push(ex);
-  });
-
-  return { byPos, month };
+  if (!schedules.length) return null;
+  return { schedules };
 }
 
 export default async function schedulesRoutes(fastify: FastifyInstance) {
@@ -140,6 +153,8 @@ export default async function schedulesRoutes(fastify: FastifyInstance) {
     async (req: FastifyRequest, reply: FastifyReply) => {
       const parts = req.parts();
       const uploaded: any[] = [];
+      const savedFiles = new Set<string>();
+      const failed: { file: string; error: string }[] = [];
       const now = new Date().toISOString();
       for await (const part of parts) {
         // @ts-ignore
@@ -152,136 +167,154 @@ export default async function schedulesRoutes(fastify: FastifyInstance) {
           chunks.push(chunk as Buffer);
         }
         const buffer = Buffer.concat(chunks);
-        // First, try to detect exported-overview format
-        const exported = parseExportedWorkbook(buffer, filename);
-        if (exported) {
-          const { byPos, month } = exported;
-          // Save schedules per position
-          byPos.forEach((payload, pos) => {
+        try {
+          // First, try to detect exported-overview format
+          const exported = parseExportedWorkbook(buffer, filename);
+          if (exported) {
+            const allAssignments: any[] = [];
+            exported.schedules.forEach((entry) => {
+              saveParsedSchedule(
+                entry.position,
+                entry.month,
+                {
+                  nightShifts: entry.payload.nightShifts,
+                  extraShifts: entry.payload.extraShifts,
+                },
+                {
+                  originalName: filename,
+                  uploadedAt: now,
+                  importType: "export-reimport",
+                }
+              );
+              uploaded.push({
+                file: filename,
+                position: entry.position,
+                month: entry.month,
+                counts: {
+                  night: entry.payload.nightShifts.length,
+                  extra: entry.payload.extraShifts.length,
+                  assignments: entry.assignments?.length || 0,
+                },
+              });
+              if (entry.assignments?.length) allAssignments.push(...entry.assignments);
+            });
+            // Persist distributions across all positions at once
+            if (allAssignments.length) {
+              db.prepare('INSERT OR IGNORE INTO datasets (id, name, createdAt) VALUES (1, ?, ?)').run('default', now);
+              const del = db.prepare('DELETE FROM distributions');
+              const ins = db.prepare(
+                `INSERT INTO distributions (dataset_id, date, position, worker, role, isManual, createdAt)
+                 VALUES (1, ?, ?, ?, ?, ?, ?)`
+              );
+              const tx = db.transaction((rows: any[]) => {
+                del.run();
+                rows.forEach((r) => {
+                  ins.run(r.date, r.position, r.worker, r.role, r.isManual ? 1 : 0, now);
+                });
+              });
+              tx(allAssignments);
+            }
+            if (exported.schedules.length) savedFiles.add(filename);
+            continue;
+          }
+
+          let parsed;
+          try {
+            parsed = await parseSchedule(buffer, filename);
+          } catch (err) {
+            failed.push({
+              file: filename,
+              error: (err as Error).message || "Failed to parse schedule",
+            });
+            continue;
+          }
+          // Group by position + month so whole-year files get split per month
+          type Bucket = { nightShifts: any[]; extraShifts: any[]; month: string; position: string };
+          const bucketMap = new Map<string, Bucket>();
+
+          const ensureBucket = (pos: string, month: string) => {
+            const key = `${pos}-${month}`;
+            if (!bucketMap.has(key)) {
+              bucketMap.set(key, { nightShifts: [], extraShifts: [], month, position: pos });
+            }
+            return bucketMap.get(key)!;
+          };
+
+          parsed.nightShifts.forEach((ns: any) => {
+            const month = ns.date.slice(0, 7);
+            const b = ensureBucket(ns.position, month);
+            b.nightShifts.push(ns);
+          });
+
+          parsed.extraShifts.forEach((ex: any) => {
+            const month = ex.date.slice(0, 7);
+            const b = ensureBucket(ex.position, month);
+            b.extraShifts.push(ex);
+          });
+
+          if (bucketMap.size === 0) {
+            failed.push({
+              file: filename,
+              error: "Unable to determine position/month from schedule",
+            });
+            continue;
+          }
+
+          const monthsSet = new Set<string>();
+          bucketMap.forEach((b) => monthsSet.add(b.month));
+          const isWholeYear = monthsSet.size > 1;
+
+          let hasSavedForFile = false;
+          bucketMap.forEach((bucket) => {
+            if (isWholeYear) {
+              const existing = getSchedule(bucket.position, bucket.month);
+              if (existing) {
+                // Skip overwriting existing month when uploading baseline/whole-year file
+                uploaded.push({
+                  file: filename,
+                  position: bucket.position,
+                  month: bucket.month,
+                  skipped: true,
+                  reason: "existing-schedule",
+                });
+                return;
+              }
+            }
             saveParsedSchedule(
-              pos,
-              month,
-              { nightShifts: payload.nightShifts, extraShifts: payload.extraShifts },
+              bucket.position,
+              bucket.month,
+              {
+                nightShifts: bucket.nightShifts,
+                extraShifts: bucket.extraShifts,
+              },
               {
                 originalName: filename,
                 uploadedAt: now,
-                importType: "export-reimport",
               }
             );
             uploaded.push({
-              position: pos,
-              month,
+              file: filename,
+              position: bucket.position,
+              month: bucket.month,
               counts: {
-                night: payload.nightShifts.length,
-                extra: payload.extraShifts.length,
-                assignments: payload.assignments?.length || 0,
+                night: bucket.nightShifts.length,
+                extra: bucket.extraShifts.length,
               },
             });
+            hasSavedForFile = true;
           });
-          // Persist distributions across all positions at once
-          const allAssignments: any[] = [];
-          byPos.forEach((payload) => {
-            if (payload.assignments?.length) allAssignments.push(...payload.assignments);
-          });
-          if (allAssignments.length) {
-            db.prepare('INSERT OR IGNORE INTO datasets (id, name, createdAt) VALUES (1, ?, ?)').run('default', now);
-            const del = db.prepare('DELETE FROM distributions');
-            const ins = db.prepare(
-              `INSERT INTO distributions (dataset_id, date, position, worker, role, isManual, createdAt)
-               VALUES (1, ?, ?, ?, ?, ?, ?)`
-            );
-            const tx = db.transaction((rows: any[]) => {
-              del.run();
-              rows.forEach((r) => {
-                ins.run(r.date, r.position, r.worker, r.role, r.isManual ? 1 : 0, now);
-              });
-            });
-            tx(allAssignments);
-          }
-          continue;
-        }
-
-        let parsed;
-        try {
-          parsed = await parseSchedule(buffer, filename);
+          if (hasSavedForFile) savedFiles.add(filename);
         } catch (err) {
-          return reply
-            .status(400)
-            .send({ error: (err as Error).message || "Failed to parse schedule" });
-        }
-        // Group by position + month so whole-year files get split per month
-        type Bucket = { nightShifts: any[]; extraShifts: any[]; month: string; position: string };
-        const bucketMap = new Map<string, Bucket>();
-
-        const ensureBucket = (pos: string, month: string) => {
-          const key = `${pos}-${month}`;
-          if (!bucketMap.has(key)) {
-            bucketMap.set(key, { nightShifts: [], extraShifts: [], month, position: pos });
-          }
-          return bucketMap.get(key)!;
-        };
-
-        parsed.nightShifts.forEach((ns: any) => {
-          const month = ns.date.slice(0, 7);
-          const b = ensureBucket(ns.position, month);
-          b.nightShifts.push(ns);
-        });
-
-        parsed.extraShifts.forEach((ex: any) => {
-          const month = ex.date.slice(0, 7);
-          const b = ensureBucket(ex.position, month);
-          b.extraShifts.push(ex);
-        });
-
-        if (bucketMap.size === 0) {
-          return reply
-            .status(400)
-            .send({ error: "Unable to determine position/month from schedule" });
-        }
-
-        const monthsSet = new Set<string>();
-        bucketMap.forEach((b) => monthsSet.add(b.month));
-        const isWholeYear = monthsSet.size > 1;
-
-        bucketMap.forEach((bucket) => {
-          if (isWholeYear) {
-            const existing = getSchedule(bucket.position, bucket.month);
-            if (existing) {
-              // Skip overwriting existing month when uploading baseline/whole-year file
-              uploaded.push({
-                position: bucket.position,
-                month: bucket.month,
-                skipped: true,
-                reason: "existing-schedule",
-              });
-              return;
-            }
-          }
-          saveParsedSchedule(
-            bucket.position,
-            bucket.month,
-            {
-              nightShifts: bucket.nightShifts,
-              extraShifts: bucket.extraShifts,
-            },
-            {
-              originalName: filename,
-              uploadedAt: now,
-            }
-          );
-          uploaded.push({
-            position: bucket.position,
-            month: bucket.month,
-            counts: {
-              night: bucket.nightShifts.length,
-              extra: bucket.extraShifts.length,
-            },
+          failed.push({
+            file: filename,
+            error: (err as Error).message || "Unexpected upload error",
           });
-        });
+        }
       }
-      if (!uploaded.length)
+      if (!uploaded.length && !failed.length) {
         return reply.status(400).send({ error: "No schedule files uploaded" });
-      reply.send({ saved: uploaded });
+      }
+      reply.send({ saved: uploaded, savedFiles: Array.from(savedFiles), failed });
     }
   );
 

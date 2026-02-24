@@ -2,10 +2,23 @@ import { FastifyInstance } from 'fastify'
 import { db } from '../db'
 import type { DistributionEntry } from '../types'
 import { requireAdmin, requireEditorOrAdmin } from './auth'
+import {
+  createScheduleVersion,
+  listScheduleVersions,
+  restoreScheduleVersion,
+  setScheduleVersionStarred,
+} from '../services/scheduleVersions'
 
 export default async function datasetsRoutes(fastify: FastifyInstance) {
   fastify.put('/api/distributions', { preHandler: requireEditorOrAdmin }, async (req, reply) => {
-    const entries: any[] = Array.isArray(req.body) ? (req.body as any[]) : []
+    const body: any = req.body || []
+    const entries: any[] = Array.isArray(body)
+      ? body
+      : Array.isArray(body.entries)
+      ? body.entries
+      : []
+    const saveVersion = Array.isArray(body) ? false : body.saveVersion === true
+    const versionName: string | undefined = Array.isArray(body) ? undefined : body.versionName
     const now = new Date().toISOString()
     // Ensure a default dataset exists for FK integrity
     db.prepare('INSERT OR IGNORE INTO datasets (id, name, createdAt) VALUES (1, ?, ?)').run('default', now)
@@ -29,8 +42,57 @@ export default async function datasetsRoutes(fastify: FastifyInstance) {
       )
     })
     tx(entries)
-    reply.send({ saved: entries.length })
+
+    let version: { id: number; name: string; createdAt: string } | undefined
+    if (saveVersion) {
+      version = createScheduleVersion(versionName)
+    }
+
+    reply.send({ saved: entries.length, version })
   })
+
+  fastify.get('/api/distributions/versions', { preHandler: requireAdmin }, async (req, reply) => {
+    const query = (req.query || {}) as { limit?: string | number }
+    const limit = Number(query.limit) || 10
+    const versions = listScheduleVersions(limit)
+    reply.send(versions)
+  })
+
+  fastify.post(
+    '/api/distributions/versions/:id/restore',
+    { preHandler: requireAdmin },
+    async (req, reply) => {
+      const id = Number((req.params as any).id)
+      if (!Number.isFinite(id) || id <= 0) {
+        return reply.status(400).send({ error: 'Invalid version id' })
+      }
+      try {
+        const restored = restoreScheduleVersion(id)
+        if (!restored) return reply.status(404).send({ error: 'Version not found' })
+        reply.send({ restored: true, version: restored })
+      } catch (err) {
+        reply.status(500).send({ error: (err as Error).message || 'Failed to restore version' })
+      }
+    }
+  )
+
+  fastify.put(
+    '/api/distributions/versions/:id/star',
+    { preHandler: requireAdmin },
+    async (req, reply) => {
+      const id = Number((req.params as any).id)
+      if (!Number.isFinite(id) || id <= 0) {
+        return reply.status(400).send({ error: 'Invalid version id' })
+      }
+      const body = (req.body || {}) as { starred?: boolean }
+      if (typeof body.starred !== 'boolean') {
+        return reply.status(400).send({ error: 'starred boolean is required' })
+      }
+      const ok = setScheduleVersionStarred(id, body.starred)
+      if (!ok) return reply.status(404).send({ error: 'Version not found' })
+      reply.send({ updated: true, id, starred: body.starred })
+    }
+  )
 
   fastify.get('/api/distributions', async (_, reply) => {
     const rows = db

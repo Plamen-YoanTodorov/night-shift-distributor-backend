@@ -61,6 +61,7 @@ CREATE TABLE IF NOT EXISTS students (
   name TEXT PRIMARY KEY,
   startDate TEXT,
   endDate TEXT,
+  position TEXT,
   createdAt TEXT NOT NULL
 );
 
@@ -90,7 +91,30 @@ CREATE TABLE IF NOT EXISTS schedules (
   parserVersion TEXT,
   UNIQUE(position, month)
 );
+
+CREATE TABLE IF NOT EXISTS schedule_versions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  createdAt TEXT NOT NULL,
+  starred INTEGER NOT NULL DEFAULT 0,
+  distributions TEXT NOT NULL,
+  schedules TEXT NOT NULL
+);
 `)
+
+// Backward-compatible migration for existing databases created before "starred".
+try {
+  db.exec('ALTER TABLE schedule_versions ADD COLUMN starred INTEGER NOT NULL DEFAULT 0')
+} catch (err) {
+  // Ignore duplicate-column errors on already-migrated DBs.
+}
+
+// Backward-compatible migration for existing databases created before students.position.
+try {
+  db.exec('ALTER TABLE students ADD COLUMN position TEXT')
+} catch (err) {
+  // Ignore duplicate-column errors on already-migrated DBs.
+}
 
 // Ensure a default dataset exists so global distribution saves do not violate FKs.
 const defaultDataset = db.prepare('SELECT id FROM datasets WHERE id = 1').get()
