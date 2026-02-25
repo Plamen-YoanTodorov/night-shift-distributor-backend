@@ -100,6 +100,18 @@ CREATE TABLE IF NOT EXISTS schedule_versions (
   distributions TEXT NOT NULL,
   schedules TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS suggestions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  message TEXT NOT NULL,
+  category TEXT,
+  status TEXT NOT NULL DEFAULT 'NEW',
+  isRead INTEGER NOT NULL DEFAULT 0,
+  isVisible INTEGER NOT NULL DEFAULT 0,
+  adminComment TEXT,
+  createdAt TEXT NOT NULL,
+  updatedAt TEXT NOT NULL
+);
 `)
 
 // Backward-compatible migration for existing databases created before "starred".
@@ -114,6 +126,31 @@ try {
   db.exec('ALTER TABLE students ADD COLUMN position TEXT')
 } catch (err) {
   // Ignore duplicate-column errors on already-migrated DBs.
+}
+
+// Backward-compatible migration for existing databases created before suggestions.status.
+try {
+  db.exec("ALTER TABLE suggestions ADD COLUMN status TEXT NOT NULL DEFAULT 'NEW'")
+} catch (err) {
+  // Ignore duplicate-column errors on already-migrated DBs.
+}
+
+// Backward-compatible migration for existing databases created before suggestions.isRead.
+try {
+  db.exec("ALTER TABLE suggestions ADD COLUMN isRead INTEGER NOT NULL DEFAULT 0")
+} catch (err) {
+  // Ignore duplicate-column errors on already-migrated DBs.
+}
+
+// Normalize legacy suggestion statuses to the current enum.
+try {
+  db.exec(`
+    UPDATE suggestions SET status = 'NEW' WHERE status = 'UNDER_REVIEW';
+    UPDATE suggestions SET status = 'IN_PROGRESS' WHERE status = 'WORKING';
+    UPDATE suggestions SET status = 'NEW' WHERE status IS NULL OR TRIM(status) = '';
+  `)
+} catch (err) {
+  // Ignore migration failures for DBs without suggestions table/state.
 }
 
 // Ensure a default dataset exists so global distribution saves do not violate FKs.

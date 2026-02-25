@@ -12,6 +12,7 @@ import goerOnlyRoutes from './routes/goerOnly'
 import nicknamesRoutes from './routes/nicknames'
 import { siteAccessRoutes } from './routes/siteAccess'
 import hiddenRoutes from './routes/hidden'
+import suggestionsRoutes from './routes/suggestions'
 import cors from "@fastify/cors"
 import './db'
 
@@ -57,6 +58,7 @@ await app.register(cors, {
   app.register(nicknamesRoutes)
   app.register(siteAccessRoutes)
   app.register(hiddenRoutes)
+  app.register(suggestionsRoutes)
 
   try {
     await app.listen({ port: PORT, host: '0.0.0.0' })
