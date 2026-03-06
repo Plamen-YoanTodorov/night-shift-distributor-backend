@@ -5,9 +5,9 @@ import { requireAdmin } from './auth'
 type RoleKey = 'stayer' | 'goer1' | 'goer2'
 
 const defaults: Record<RoleKey, string> = {
-  stayer: 'III',
-  goer1: 'I',
-  goer2: 'II',
+  stayer: 'H-3',
+  goer1: 'H-1',
+  goer2: 'H-2',
 }
 
 export default async function roleLabelsRoutes(fastify: FastifyInstance) {
@@ -17,7 +17,14 @@ export default async function roleLabelsRoutes(fastify: FastifyInstance) {
     rows.forEach((r) => {
       res[r.role] = r.label
     })
-    return res
+
+    const merged: Record<RoleKey, string> = {
+      stayer: defaults.stayer,
+      goer1: defaults.goer1,
+      goer2: defaults.goer2,
+    }
+
+    return merged;
   })
 
   fastify.put('/api/role-labels', { preHandler: requireAdmin }, async (req, reply) => {
