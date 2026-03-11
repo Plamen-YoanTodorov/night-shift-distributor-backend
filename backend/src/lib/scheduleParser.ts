@@ -440,6 +440,73 @@ function parseExcelNew(buf: Buffer, path: string) {
   return { nightShifts, extraShifts: extras }
 }
 
+// Layout: "Разпределяне на наличните РП"
+// - Position: AJ2 ("РМ Варна ОКП" | "РМ Варна ЛКК")
+// - Names: C11, C13, C15... until first empty after data starts
+// - Day 1 code: E(row), then +1 column per day
+// - Parse only colored cells
+function parseExcelAvailableControllers(buf: Buffer, path: string) {
+  const workbook = XLSX.read(buf, { type: 'buffer', cellStyles: true })
+  const sheetName = workbook.SheetNames[0]
+  const sheet = workbook.Sheets[sheetName]
+  if (!sheet) throw new Error('Sheet missing in available-controllers layout')
+
+  const base = inferMonthYear(path)
+  if (!base) throw new Error('Cannot infer month/year from filename')
+  const daysInMonth = new Date(base.year, base.month, 0).getDate()
+
+  const rawPos = sheet['AJ2']?.v
+  const posText = typeof rawPos === 'string' ? rawPos : String(rawPos ?? '')
+  const position = pickVarnaPosition(posText) || pickPosition(posText)
+  if (!position) throw new Error('Position not detected in available-controllers layout')
+
+  const shifts = new Map<string, { date: string; position: Position; workers: Set<string>; source: string }>()
+  const extras: ExtraShift[] = []
+  const startColIdx = XLSX.utils.decode_col('E')
+
+  let started = false
+  for (let row = 11; row < 500; row += 2) {
+    const rawName = sheet[`C${row}`]?.v
+    const name = typeof rawName === 'string' ? rawName.trim() : String(rawName ?? '').trim()
+    if (!name) {
+      if (started) break
+      continue
+    }
+    started = true
+
+    for (let day = 1; day <= daysInMonth; day++) {
+      const col = XLSX.utils.encode_col(startColIdx + (day - 1))
+      const cell = sheet[`${col}${row}`] as XLSX.CellObject | undefined
+      if (!cellHasFill(cell)) continue
+      const code = normalizeCode(cell?.v)
+      if (!code) continue
+      const date = isoDay(base.year, base.month, day)
+
+      if (NIGHT_CODES.includes(code)) {
+        const key = `${position}-${date}`
+        if (!shifts.has(key)) shifts.set(key, { date, position, workers: new Set(), source: path })
+        shifts.get(key)!.workers.add(name)
+      }
+      if (EXTRA_SHIFT_CODES.includes(code)) {
+        extras.push({ name, date, code, position })
+      }
+    }
+  }
+
+  const nightShifts: NightShift[] = Array.from(shifts.values()).map((s) => ({
+    id: `${s.position}-${s.date}`,
+    date: s.date,
+    position: s.position,
+    workers: Array.from(s.workers),
+    source: path,
+  }))
+
+  if (!nightShifts.length && !extras.length) {
+    throw new Error('No colored shift cells found in available-controllers sheet')
+  }
+  return { nightShifts, extraShifts: extras }
+}
+
 // DOCX-converted XLSX layout (Varna LKK / OKP)
 function parseExcelDocxConverted(buf: Buffer, path: string) {
   // Need styles to detect filled (colored) cells
@@ -679,6 +746,10 @@ export async function parseSchedule(buffer: Buffer, filename: string) {
   }
   if (lower.endsWith('.xls') || lower.endsWith('.xlsx') || lower.endsWith('.xlsm')) {
     const workbook = XLSX.read(buffer, { type: 'buffer' })
+    const firstSheetName = (workbook.SheetNames[0] || '').trim()
+    if (firstSheetName === 'Разпределяне на наличните РП') {
+      return parseExcelAvailableControllers(buffer, filename)
+    }
     const wholeYear = parseWholeYearSheet(workbook, filename)
     if (wholeYear) return wholeYear
     // Detect layout: if BD3 has a value -> old layout; else new layout

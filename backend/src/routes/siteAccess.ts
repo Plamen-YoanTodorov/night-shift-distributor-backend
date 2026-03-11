@@ -14,7 +14,7 @@ export async function siteAccessRoutes(fastify: FastifyInstance) {
     const body = (req.body as any) || {}
     const password: string = body.password || ''
     if (password === SITE_PASSWORD) {
-      return reply.send({ token: SITE_TOKEN, expiresInHours: 24, persistent: false })
+      return reply.send({ token: SITE_TOKEN, expiresInHours: 168, persistent: false })
     }
     if (SITE_BYPASS_PASSWORD && password === SITE_BYPASS_PASSWORD) {
       return reply.send({

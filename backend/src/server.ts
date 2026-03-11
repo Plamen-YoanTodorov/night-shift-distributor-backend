@@ -24,25 +24,59 @@ async function start() {
   })
 
 await app.register(cors, {
-  origin: [
-    // Production URLs
-    'https://atconight.com',
-    'https://www.atconight.com',
-    "https://atco-night.pages.dev",
+  origin: (origin, cb) => {
+    const allowedOrigins = new Set([
+      'https://atconight.com',
+      'https://www.atconight.com',
+      'https://atco-night.pages.dev',
+      'https://staging.atconight.com',
+      'https://www.staging.atconight.com',
+      'https://dev.atco-night.pages.dev',
+      'http://localhost:5173',
+      'capacitor://localhost',
+      'http://localhost',
+      'ionic://localhost',
+      'https://f3bc-94-155-141-202.ngrok-free.app'
+    ])
 
-    // Staging URLs
-    'https://staging.atconight.com',
-    'https://www.staging.atconight.com',
-    "https://dev.atco-night.pages.dev",
-    
-    // Localhost URLs
-    'http://localhost:5173',
-  ],
+    // allow server-to-server / native requests with no Origin header
+    if (!origin) {
+      cb(null, true)
+      return
+    }
+
+    if (allowedOrigins.has(origin)) {
+      cb(null, true)
+      return
+    }
+
+    cb(new Error(`Origin ${origin} not allowed`), false)
+  },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With'],
-  // set this to true ONLY if you use cookies/sessions:
   credentials: false,
 })
+
+// await app.register(cors, {
+//   origin: [
+//     // Production URLs
+//     'https://atconight.com',
+//     'https://www.atconight.com',
+//     "https://atco-night.pages.dev",
+
+//     // Staging URLs
+//     'https://staging.atconight.com',
+//     'https://www.staging.atconight.com',
+//     "https://dev.atco-night.pages.dev",
+    
+//     // Localhost URLs
+//     'http://localhost:5173',
+//   ],
+//   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+//   allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With'],
+//   // set this to true ONLY if you use cookies/sessions:
+//   credentials: false,
+// })
 
   app.get('/health', async () => ({ ok: true }))
 
