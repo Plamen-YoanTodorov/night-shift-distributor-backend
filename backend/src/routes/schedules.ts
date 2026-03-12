@@ -5,6 +5,7 @@ import {
   parseSchedule,
   inferMonthYear,
   computeMonth,
+  normalizeWorkerName,
 } from "../lib/scheduleParser";
 import * as XLSX from "xlsx";
 import {
@@ -85,7 +86,7 @@ function parseExportedWorkbook(buffer: Buffer, filename: string) {
   rows.forEach((row) => {
     const nameCell = row[0];
     if (!nameCell || nameCell.toString().toLowerCase().includes("legend")) return;
-    const person = nameCell.toString().trim();
+    const person = normalizeWorkerName(nameCell);
     // Skip rows that don't look like full names (avoids stray initials like "N.")
     if (!person || person.length < 3 || !/\s/.test(person)) return;
     dateCols.forEach(({ idx, date }) => {
@@ -378,7 +379,7 @@ export default async function schedulesRoutes(fastify: FastifyInstance) {
         rows.forEach((row) => {
           const nameCell = row[0];
           if (!nameCell || nameCell.toString().toLowerCase().includes("legend")) return;
-          const person = nameCell.toString().trim();
+          const person = normalizeWorkerName(nameCell);
           if (!person) return;
           dateCols.forEach(({ idx, date }) => {
             const cell = row[idx];

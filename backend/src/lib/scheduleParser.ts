@@ -66,6 +66,14 @@ function normalizeCode(value: unknown) {
   return value.trim()
 }
 
+export function normalizeWorkerName(value: unknown) {
+  const raw = typeof value === 'string' ? value : String(value ?? '')
+  return raw
+    .replace(/[‐‑‒–—―-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 function toISODateWithBase(val: unknown, base?: { year: number; month: number } | null): string | null {
   if (!base) return null
   if (typeof val === 'number') {
@@ -223,7 +231,7 @@ function parseWholeYearSheet(workbook: XLSX.WorkBook, filename: string) {
 
   rows.forEach((row) => {
     const nameCell = sheet[`B${row}`]
-    const name = typeof nameCell?.v === 'string' ? nameCell.v.trim() : ''
+    const name = normalizeWorkerName(nameCell?.v)
     if (!name) return
     const position: Position = row <= 16 ? 'TWR' : 'APP'
     for (let c = startColIdx; c <= endColIdx; c++) {
@@ -357,7 +365,7 @@ function parseExcel(buf: Buffer, path: string) {
 
   for (const row of workerRows) {
     const nameCell = sheet[`H${row}`]
-    const name = typeof nameCell?.v === 'string' ? nameCell.v.trim() : ''
+    const name = normalizeWorkerName(nameCell?.v)
     if (!name) continue
     const roleCell = sheet[`M${row}`]?.v
     if (!allowedForRole(roleCell, position)) continue
@@ -412,7 +420,7 @@ function parseExcelNew(buf: Buffer, path: string) {
 
   for (let r = 5; r <= range.e.r; r += 2) {
     const nameCell = sheet[`C${r}`]
-    const name = typeof nameCell?.v === 'string' ? nameCell.v.trim() : ''
+    const name = normalizeWorkerName(nameCell?.v)
     if (!name) continue
     const roleCell = sheet[`H${r}`]?.v
     if (!allowedForRole(roleCell, position)) continue
@@ -467,7 +475,7 @@ function parseExcelAvailableControllers(buf: Buffer, path: string) {
   let started = false
   for (let row = 11; row < 500; row += 2) {
     const rawName = sheet[`C${row}`]?.v
-    const name = typeof rawName === 'string' ? rawName.trim() : String(rawName ?? '').trim()
+    const name = normalizeWorkerName(rawName)
     if (!name) {
       if (started) break
       continue
@@ -533,7 +541,7 @@ function parseExcelDocxConverted(buf: Buffer, path: string) {
 
   const consumeRow = (row: number) => {
     const nameCell = sheet[`C${row}`]
-    const name = typeof nameCell?.v === 'string' ? nameCell.v.trim() : ''
+    const name = normalizeWorkerName(nameCell?.v)
     if (!name) return false
     const roleCell = sheet[`D${row}`]?.v
     if (!allowedForRole(roleCell, position)) return false
@@ -640,7 +648,7 @@ async function parsePdfToTable(buffer: Buffer, path: string): Promise<PdfTable> 
       i = j - 1
       continue
     }
-    const name = nameParts.join(' ').trim()
+    const name = normalizeWorkerName(nameParts.join(' '))
     const dutyTokens = dutyLine.split(/\s+/).filter(Boolean)
     const dutyStart = dutyTokens.findIndex((t) => t.startsWith('РП') || t === 'ЛКК')
     if (dutyStart === -1) {
