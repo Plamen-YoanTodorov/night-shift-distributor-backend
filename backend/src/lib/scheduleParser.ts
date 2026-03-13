@@ -7,7 +7,8 @@ export type Position = 'TWR' | 'APP'
 export type NightShift = { id: string; date: string; position: Position; workers: string[]; source: string }
 export type ExtraShift = { name: string; date: string; code: string; position: Position }
 
-const NIGHT_CODES = ['Н-2', 'Н22', 'H-2', 'Н']
+const NIGHT_CODES = ['Н-2', 'Н22', 'Н 22', 'H-2', 'H22', 'Н', 'H'] // Latin-H and Cyrillic-Н variants; with or without "-2" suffix
+const H22_CODES = new Set(['H22', 'Н22', 'Н 22', 'H 22']) // Latin-H and Cyrillic-Н variants → always stayer
 const EXTRA_SHIFT_CODES: string[] = [
   'I',
   'II-2',
@@ -244,6 +245,7 @@ function parseWholeYearSheet(workbook: XLSX.WorkBook, filename: string) {
         const key = `${position}-${date}`
         if (!shifts.has(key)) shifts.set(key, { date, position, workers: new Set(), source: filename })
         shifts.get(key)!.workers.add(name)
+        if (H22_CODES.has(code)) extras.push({ name, date, code: 'H22', position })
       }
       if (EXTRA_SHIFT_CODES.includes(code)) {
         extras.push({ name, date, code, position })
@@ -379,6 +381,7 @@ function parseExcel(buf: Buffer, path: string) {
         const key = `${position}-${date}`
         if (!shifts.has(key)) shifts.set(key, { date, position, workers: new Set(), source: path })
         shifts.get(key)!.workers.add(name)
+        if (H22_CODES.has(code)) extras.push({ name, date, code: 'H22', position })
       }
       if (EXTRA_SHIFT_CODES.includes(code)) {
         extras.push({ name, date, code, position })
@@ -431,6 +434,7 @@ function parseExcelNew(buf: Buffer, path: string) {
         const key = `${position}-${date}`
         if (!shifts.has(key)) shifts.set(key, { date, position, workers: new Set(), source: path })
         shifts.get(key)!.workers.add(name)
+        if (H22_CODES.has(code)) extras.push({ name, date, code: 'H22', position })
       }
       if (EXTRA_SHIFT_CODES.includes(code)) {
         extras.push({ name, date, code, position })
@@ -494,6 +498,7 @@ function parseExcelAvailableControllers(buf: Buffer, path: string) {
         const key = `${position}-${date}`
         if (!shifts.has(key)) shifts.set(key, { date, position, workers: new Set(), source: path })
         shifts.get(key)!.workers.add(name)
+        if (H22_CODES.has(code)) extras.push({ name, date, code: 'H22', position })
       }
       if (EXTRA_SHIFT_CODES.includes(code)) {
         extras.push({ name, date, code, position })
@@ -557,6 +562,7 @@ function parseExcelDocxConverted(buf: Buffer, path: string) {
         const key = `${position}-${date}`
         if (!shifts.has(key)) shifts.set(key, { date, position, workers: new Set(), source: path })
         shifts.get(key)!.workers.add(name)
+        if (H22_CODES.has(code)) extras.push({ name, date, code: 'H22', position })
       }
       if (EXTRA_SHIFT_CODES.includes(code)) {
         extras.push({ name, date, code, position })
@@ -730,6 +736,7 @@ function parsePdfTable(table: PdfTable, pdfPath: string) {
         const key = `${table.position}-${date}`
         if (!shifts.has(key)) shifts.set(key, { date, position: table.position, workers: new Set(), source: pdfPath })
         shifts.get(key)!.workers.add(row.name)
+        if (H22_CODES.has(code)) extras.push({ name: row.name, date, code: 'H22', position: table.position })
       }
       if (EXTRA_SHIFT_CODES.includes(code)) {
         extras.push({ name: row.name, date, code, position: table.position })
