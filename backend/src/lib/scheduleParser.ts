@@ -753,6 +753,68 @@ function parsePdfTable(table: PdfTable, pdfPath: string) {
   return { nightShifts, extraShifts: extras }
 }
 
+// -------- Re-import parser for files exported by the app (sheet name "Schedule", A1 = "Name") --------
+function parseReimportExcel(buf: Buffer, filePath: string) {
+  const workbook = XLSX.read(buf, { type: 'buffer' })
+  const sheetName = workbook.SheetNames[0]
+  const sheet = workbook.Sheets[sheetName]
+  const range = XLSX.utils.decode_range(sheet['!ref'] || 'A1')
+
+  // Row 0: col 0 = "Name", col 1+ = ISO date strings
+  const datesByCol = new Map<number, string>()
+  for (let c = 1; c <= range.e.c; c++) {
+    const cell = sheet[XLSX.utils.encode_cell({ r: 0, c })]
+    const val = cell?.v
+    if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(val.trim())) {
+      datesByCol.set(c, val.trim())
+    }
+  }
+
+  const shifts = new Map<string, { date: string; position: Position; workers: Set<string>; source: string }>()
+  const extras: ExtraShift[] = []
+
+  // Row 1 = legend (skip), rows 2+ = person data
+  for (let r = 2; r <= range.e.r; r++) {
+    const nameCell = sheet[XLSX.utils.encode_cell({ r, c: 0 })]
+    const name = normalizeWorkerName(nameCell?.v)
+    if (!name) continue
+
+    datesByCol.forEach((date, c) => {
+      const cell = sheet[XLSX.utils.encode_cell({ r, c })]
+      const raw = typeof cell?.v === 'string' ? cell.v : ''
+      if (!raw) return
+
+      for (const line of raw.split('\n')) {
+        const trimmed = line.trim()
+        // Night shift line: "APP: ROLE [MARKER]" or "TWR: ROLE [MARKER]"
+        const nightMatch = trimmed.match(/^(APP|TWR):\s*.+\[(STAYER|GOER1|GOER2|GOER)\]/i)
+        if (nightMatch) {
+          const pos = nightMatch[1].toUpperCase() as Position
+          const key = `${pos}-${date}`
+          if (!shifts.has(key)) shifts.set(key, { date, position: pos, workers: new Set(), source: filePath })
+          shifts.get(key)!.workers.add(name)
+        }
+        // Extra shift line: "Extra(APP): CODE" or "Extra(TWR): CODE"
+        const extraMatch = trimmed.match(/^Extra\((APP|TWR)\):\s*(.+)/i)
+        if (extraMatch) {
+          const pos = extraMatch[1].toUpperCase() as Position
+          const code = extraMatch[2].trim()
+          extras.push({ name, date, code, position: pos })
+        }
+      }
+    })
+  }
+
+  const nightShifts: NightShift[] = Array.from(shifts.values()).map((s) => ({
+    id: `${s.position}-${s.date}`,
+    date: s.date,
+    position: s.position,
+    workers: Array.from(s.workers),
+    source: filePath,
+  }))
+  return { nightShifts, extraShifts: extras }
+}
+
 export async function parseSchedule(buffer: Buffer, filename: string) {
   const lower = filename.toLowerCase()
   if (lower.endsWith('.pdf')) {
@@ -762,6 +824,10 @@ export async function parseSchedule(buffer: Buffer, filename: string) {
   if (lower.endsWith('.xls') || lower.endsWith('.xlsx') || lower.endsWith('.xlsm')) {
     const workbook = XLSX.read(buffer, { type: 'buffer' })
     const firstSheetName = (workbook.SheetNames[0] || '').trim()
+    const firstSheet = workbook.Sheets[workbook.SheetNames[0]]
+    if (firstSheet?.['A1']?.v === 'Name') {
+      return parseReimportExcel(buffer, filename)
+    }
     if (firstSheetName === 'Разпределяне на наличните РП') {
       return parseExcelAvailableControllers(buffer, filename)
     }
