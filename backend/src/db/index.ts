@@ -112,6 +112,45 @@ CREATE TABLE IF NOT EXISTS suggestions (
   createdAt TEXT NOT NULL,
   updatedAt TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS accounts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  username TEXT NOT NULL UNIQUE,
+  passwordHash TEXT NOT NULL,
+  role TEXT NOT NULL CHECK(role IN ('admin', 'editor', 'viewer')),
+  staffName TEXT,
+  createdAt TEXT NOT NULL,
+  updatedAt TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS swap_requests (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  requesterAccountId INTEGER NOT NULL,
+  targetAccountId INTEGER NOT NULL,
+  requesterDate TEXT NOT NULL,
+  requesterPosition TEXT NOT NULL CHECK(requesterPosition IN ('APP', 'TWR')),
+  requesterCode TEXT NOT NULL,
+  targetDate TEXT NOT NULL,
+  targetPosition TEXT NOT NULL CHECK(targetPosition IN ('APP', 'TWR')),
+  targetCode TEXT NOT NULL,
+  status TEXT NOT NULL CHECK(status IN (
+    'PENDING_TARGET',
+    'DECLINED_BY_TARGET',
+    'ACCEPTED_WAITING_ADMIN',
+    'APPROVED',
+    'REJECTED_BY_ADMIN',
+    'CANCELLED'
+  )),
+  adminAccountId INTEGER,
+  adminNote TEXT,
+  targetRespondedAt TEXT,
+  adminReviewedAt TEXT,
+  createdAt TEXT NOT NULL,
+  updatedAt TEXT NOT NULL,
+  FOREIGN KEY (requesterAccountId) REFERENCES accounts(id) ON DELETE CASCADE,
+  FOREIGN KEY (targetAccountId) REFERENCES accounts(id) ON DELETE CASCADE,
+  FOREIGN KEY (adminAccountId) REFERENCES accounts(id) ON DELETE SET NULL
+);
 `)
 
 // Backward-compatible migration for existing databases created before "starred".
@@ -138,6 +177,13 @@ try {
 // Backward-compatible migration for existing databases created before suggestions.isRead.
 try {
   db.exec("ALTER TABLE suggestions ADD COLUMN isRead INTEGER NOT NULL DEFAULT 0")
+} catch (err) {
+  // Ignore duplicate-column errors on already-migrated DBs.
+}
+
+// Backward-compatible migration for existing databases created before account staff links.
+try {
+  db.exec('ALTER TABLE accounts ADD COLUMN staffName TEXT')
 } catch (err) {
   // Ignore duplicate-column errors on already-migrated DBs.
 }

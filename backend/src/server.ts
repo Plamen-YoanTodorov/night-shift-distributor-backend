@@ -10,13 +10,43 @@ import editorRoutes from './routes/editor'
 import schedulesRoutes from './routes/schedules'
 import goerOnlyRoutes from './routes/goerOnly'
 import nicknamesRoutes from './routes/nicknames'
-import { siteAccessRoutes } from './routes/siteAccess'
 import hiddenRoutes from './routes/hidden'
 import suggestionsRoutes from './routes/suggestions'
+import accountsRoutes from './routes/accounts'
+import { siteAccessRoutes } from './routes/siteAccess'
+import swapsRoutes from './routes/swaps'
 import cors from "@fastify/cors"
 import './db'
 
 const PORT = Number(process.env.PORT) || 8080
+const isProduction = process.env.NODE_ENV === 'production'
+
+function isPrivateLanHostname(hostname: string) {
+  if (
+    hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    hostname === '0.0.0.0'
+  ) {
+    return true
+  }
+
+  return (
+    /^192\.168\.\d{1,3}\.\d{1,3}$/.test(hostname) ||
+    /^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname) ||
+    /^172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}$/.test(hostname)
+  )
+}
+
+function isAllowedDevOrigin(origin: string) {
+  if (isProduction) return false
+
+  try {
+    const url = new URL(origin)
+    return url.protocol === 'http:' && isPrivateLanHostname(url.hostname)
+  } catch {
+    return false
+  }
+}
 
 async function start() {
   const app = Fastify({
@@ -33,10 +63,10 @@ await app.register(cors, {
       'https://www.staging.atconight.com',
       'https://dev.atco-night.pages.dev',
       'http://localhost:5173',
+      'http://localhost:5174',
       'capacitor://localhost',
       'http://localhost',
       'ionic://localhost',
-      'https://f3bc-94-155-141-202.ngrok-free.app'
     ])
 
     // allow server-to-server / native requests with no Origin header
@@ -45,7 +75,7 @@ await app.register(cors, {
       return
     }
 
-    if (allowedOrigins.has(origin)) {
+    if (allowedOrigins.has(origin) || isAllowedDevOrigin(origin)) {
       cb(null, true)
       return
     }
@@ -81,6 +111,9 @@ await app.register(cors, {
   app.get('/health', async () => ({ ok: true }))
 
   app.register(authRoutes)
+  app.register(siteAccessRoutes)
+  app.register(accountsRoutes)
+  app.register(swapsRoutes)
   app.register(uploadsRoutes)
   app.register(datasetsRoutes)
   app.register(holidaysRoutes)
@@ -90,7 +123,6 @@ await app.register(cors, {
   app.register(editorRoutes)
   app.register(schedulesRoutes)
   app.register(nicknamesRoutes)
-  app.register(siteAccessRoutes)
   app.register(hiddenRoutes)
   app.register(suggestionsRoutes)
 

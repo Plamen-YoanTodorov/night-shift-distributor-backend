@@ -467,7 +467,9 @@ function parseExcelAvailableControllers(buf: Buffer, path: string) {
   if (!base) throw new Error('Cannot infer month/year from filename')
   const daysInMonth = new Date(base.year, base.month, 0).getDate()
 
-  const rawPos = sheet['AJ2']?.v
+  const rawPos = sheet['AJ2']?.v !== '' && sheet['AJ2']?.v != null
+  ? sheet['AJ2']?.v
+  : sheet['AK2']?.v;
   const posText = typeof rawPos === 'string' ? rawPos : String(rawPos ?? '')
   const position = pickVarnaPosition(posText) || pickPosition(posText)
   if (!position) throw new Error('Position not detected in available-controllers layout')

@@ -1,5 +1,6 @@
 import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import crypto from 'crypto'
+import { verifyAccountToken, verifyAccountTokenDetails, type AccountDto } from '../services/accounts'
 
 const tokenRoles = new Map<string, 'admin' | 'editor'>()
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123'
@@ -7,11 +8,14 @@ const EDITOR_PASSWORD = process.env.EDITOR_PASSWORD || 'editor123'
 const STATIC_ADMIN_TOKEN = crypto.createHash('sha256').update(`${ADMIN_PASSWORD}|ns-admin`).digest('hex')
 const STATIC_EDITOR_TOKEN = crypto.createHash('sha256').update(`${EDITOR_PASSWORD}|ns-editor`).digest('hex')
 const ALLOW_ALL_TOKENS = process.env.ALLOW_ALL_TOKENS === 'true'
+const ALLOW_LEGACY_PASSWORD_LOGIN = process.env.ALLOW_LEGACY_PASSWORD_LOGIN === 'true'
 
 export function verifyToken(header?: string): 'admin' | 'editor' | null {
   if (!header) return null
   const token = header.replace(/^Bearer\s+/i, '').trim()
   if (ALLOW_ALL_TOKENS && token) return 'admin'
+  const accountRole = verifyAccountToken(token)
+  if (accountRole === 'admin' || accountRole === 'editor') return accountRole
   const role = tokenRoles.get(token)
   return role || null
 }
@@ -32,7 +36,24 @@ export function requireEditorOrAdmin(req: FastifyRequest, reply: FastifyReply, d
   reply.code(401).send({ error: 'Unauthorized' })
 }
 
+export function getAccountFromAuthHeader(header?: string): AccountDto | null {
+  if (!header) return null
+  const token = header.replace(/^Bearer\s+/i, '').trim()
+  return verifyAccountTokenDetails(token)
+}
+
+export function requireAccount(req: FastifyRequest, reply: FastifyReply, done: () => void) {
+  const account = getAccountFromAuthHeader(req.headers.authorization)
+  if (account) {
+    ;(req as FastifyRequest & { account?: AccountDto }).account = account
+    return done()
+  }
+  reply.code(401).send({ error: 'Unauthorized' })
+}
+
 export default async function authRoutes(fastify: FastifyInstance) {
+  if (!ALLOW_LEGACY_PASSWORD_LOGIN) return
+
   fastify.post('/api/auth/login', async (req, reply) => {
     const body = (req.body as any) || {}
     const password: string = body.password || ''
