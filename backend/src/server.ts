@@ -15,6 +15,7 @@ import suggestionsRoutes from './routes/suggestions'
 import accountsRoutes from './routes/accounts'
 import { siteAccessRoutes } from './routes/siteAccess'
 import swapsRoutes from './routes/swaps'
+import appSettingsRoutes from './routes/settings'
 import cors from "@fastify/cors"
 import './db'
 
@@ -87,27 +88,6 @@ await app.register(cors, {
   credentials: false,
 })
 
-// await app.register(cors, {
-//   origin: [
-//     // Production URLs
-//     'https://atconight.com',
-//     'https://www.atconight.com',
-//     "https://atco-night.pages.dev",
-
-//     // Staging URLs
-//     'https://staging.atconight.com',
-//     'https://www.staging.atconight.com',
-//     "https://dev.atco-night.pages.dev",
-    
-//     // Localhost URLs
-//     'http://localhost:5173',
-//   ],
-//   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-//   allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With'],
-//   // set this to true ONLY if you use cookies/sessions:
-//   credentials: false,
-// })
-
   app.get('/health', async () => ({ ok: true }))
 
   app.register(authRoutes)
@@ -125,6 +105,7 @@ await app.register(cors, {
   app.register(nicknamesRoutes)
   app.register(hiddenRoutes)
   app.register(suggestionsRoutes)
+  app.register(appSettingsRoutes)
 
   try {
     await app.listen({ port: PORT, host: '0.0.0.0' })
