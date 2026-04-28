@@ -67,6 +67,7 @@ await app.register(cors, {
       'http://localhost:5174',
       'capacitor://localhost',
       'http://localhost',
+      'https://localhost',
       'ionic://localhost',
     ])
 
