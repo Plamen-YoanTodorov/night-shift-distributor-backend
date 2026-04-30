@@ -212,7 +212,7 @@ if (!defaultDataset) {
 }
 
 // Seed default role labels if missing
-const defaultLabels: Record<string, string> = { stayer: 'Stayer', goer1: 'Goer', goer2: 'Goer 2' }
+const defaultLabels: Record<string, string> = { stayer: 'H-3', goer1: 'H-1', goer2: 'H-2' }
 const upsertLabel = db.prepare(
   'INSERT INTO role_labels (role, label) VALUES (?, ?) ON CONFLICT(role) DO UPDATE SET label=excluded.label'
 )
