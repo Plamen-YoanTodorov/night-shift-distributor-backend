@@ -4,7 +4,9 @@ import path from 'path'
 
 const dataDir = path.resolve(process.env.DATA_DIR ?? path.join(process.cwd(), "data"))
 const uploadsDir = path.join(dataDir, 'uploads')
+const suggestionMediaDir = path.join(dataDir, 'suggestion-media')
 fs.mkdirSync(uploadsDir, { recursive: true })
+fs.mkdirSync(suggestionMediaDir, { recursive: true })
 
 const dbPath = path.join(dataDir, 'db.sqlite')
 const db = new Database(dbPath)
@@ -103,14 +105,67 @@ CREATE TABLE IF NOT EXISTS schedule_versions (
 
 CREATE TABLE IF NOT EXISTS suggestions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  title TEXT,
   message TEXT NOT NULL,
   category TEXT,
   status TEXT NOT NULL DEFAULT 'NEW',
+  threadStatus TEXT NOT NULL DEFAULT 'under_review',
   isRead INTEGER NOT NULL DEFAULT 0,
   isVisible INTEGER NOT NULL DEFAULT 0,
+  isPinned INTEGER NOT NULL DEFAULT 0,
+  isLocked INTEGER NOT NULL DEFAULT 0,
   adminComment TEXT,
+  internalNote TEXT,
   createdAt TEXT NOT NULL,
   updatedAt TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS suggestion_attachments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  suggestionId INTEGER NOT NULL,
+  originalName TEXT NOT NULL,
+  storedName TEXT NOT NULL,
+  mimeType TEXT NOT NULL,
+  fileSizeBytes INTEGER NOT NULL,
+  createdAt TEXT NOT NULL,
+  FOREIGN KEY (suggestionId) REFERENCES suggestions(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS feedback_official_replies (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  threadId INTEGER NOT NULL UNIQUE,
+  body TEXT NOT NULL,
+  authorId INTEGER,
+  authorName TEXT,
+  createdAt TEXT NOT NULL,
+  updatedAt TEXT NOT NULL,
+  FOREIGN KEY (threadId) REFERENCES suggestions(id) ON DELETE CASCADE,
+  FOREIGN KEY (authorId) REFERENCES accounts(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS feedback_comments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  threadId INTEGER NOT NULL,
+  body TEXT NOT NULL,
+  authorId INTEGER,
+  authorName TEXT,
+  isAdmin INTEGER NOT NULL DEFAULT 0,
+  createdAt TEXT NOT NULL,
+  updatedAt TEXT,
+  deletedAt TEXT,
+  FOREIGN KEY (threadId) REFERENCES suggestions(id) ON DELETE CASCADE,
+  FOREIGN KEY (authorId) REFERENCES accounts(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS feedback_thread_votes (
+  threadId INTEGER NOT NULL,
+  voterId TEXT NOT NULL,
+  vote INTEGER NOT NULL CHECK(vote IN (-1, 1)),
+  voteDate TEXT,
+  createdAt TEXT NOT NULL,
+  updatedAt TEXT NOT NULL,
+  PRIMARY KEY (threadId, voterId),
+  FOREIGN KEY (threadId) REFERENCES suggestions(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS accounts (
@@ -179,6 +234,43 @@ try {
   // Ignore duplicate-column errors on already-migrated DBs.
 }
 
+// Backward-compatible migration for feedback thread fields on suggestions.
+try {
+  db.exec("ALTER TABLE suggestions ADD COLUMN title TEXT")
+} catch (err) {
+  // Ignore duplicate-column errors on already-migrated DBs.
+}
+
+try {
+  db.exec("ALTER TABLE suggestions ADD COLUMN threadStatus TEXT NOT NULL DEFAULT 'under_review'")
+} catch (err) {
+  // Ignore duplicate-column errors on already-migrated DBs.
+}
+
+try {
+  db.exec("ALTER TABLE suggestions ADD COLUMN isPinned INTEGER NOT NULL DEFAULT 0")
+} catch (err) {
+  // Ignore duplicate-column errors on already-migrated DBs.
+}
+
+try {
+  db.exec("ALTER TABLE suggestions ADD COLUMN isLocked INTEGER NOT NULL DEFAULT 0")
+} catch (err) {
+  // Ignore duplicate-column errors on already-migrated DBs.
+}
+
+try {
+  db.exec("ALTER TABLE suggestions ADD COLUMN internalNote TEXT")
+} catch (err) {
+  // Ignore duplicate-column errors on already-migrated DBs.
+}
+
+try {
+  db.exec("ALTER TABLE feedback_thread_votes ADD COLUMN voteDate TEXT")
+} catch (err) {
+  // Ignore duplicate-column errors on already-migrated DBs.
+}
+
 // Backward-compatible migration for existing databases created before suggestions.isRead.
 try {
   db.exec("ALTER TABLE suggestions ADD COLUMN isRead INTEGER NOT NULL DEFAULT 0")
@@ -199,9 +291,39 @@ try {
     UPDATE suggestions SET status = 'NEW' WHERE status = 'UNDER_REVIEW';
     UPDATE suggestions SET status = 'IN_PROGRESS' WHERE status = 'WORKING';
     UPDATE suggestions SET status = 'NEW' WHERE status IS NULL OR TRIM(status) = '';
+    UPDATE suggestions
+       SET threadStatus = CASE status
+         WHEN 'ACKNOWLEDGED' THEN 'planned'
+         WHEN 'ACCEPTED' THEN 'planned'
+         WHEN 'ON_HOLD' THEN 'planned'
+         WHEN 'IN_PROGRESS' THEN 'in_progress'
+         WHEN 'DONE' THEN 'completed'
+         WHEN 'BLOCKED' THEN 'blocked'
+         WHEN 'OUT_OF_SCOPE' THEN 'answered'
+         ELSE 'under_review'
+       END
+     WHERE threadStatus IS NULL
+        OR TRIM(threadStatus) = ''
+        OR threadStatus NOT IN ('under_review', 'planned', 'in_progress', 'completed', 'blocked', 'answered');
   `)
 } catch (err) {
   // Ignore migration failures for DBs without suggestions table/state.
+}
+
+// Preserve existing public update text as the official reply backing record.
+try {
+  db.exec(`
+    INSERT INTO feedback_official_replies (threadId, body, authorName, createdAt, updatedAt)
+    SELECT id, adminComment, 'Admin', updatedAt, updatedAt
+      FROM suggestions
+     WHERE adminComment IS NOT NULL
+       AND TRIM(adminComment) <> ''
+       AND NOT EXISTS (
+         SELECT 1 FROM feedback_official_replies r WHERE r.threadId = suggestions.id
+       );
+  `)
+} catch (err) {
+  // Ignore migration failures for DBs without feedback tables.
 }
 
 // Ensure a default dataset exists so global distribution saves do not violate FKs.
@@ -218,4 +340,4 @@ const upsertLabel = db.prepare(
 )
 Object.entries(defaultLabels).forEach(([role, label]) => upsertLabel.run(role, label))
 
-export { db, uploadsDir }
+export { db, uploadsDir, suggestionMediaDir }

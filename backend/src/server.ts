@@ -12,6 +12,7 @@ import goerOnlyRoutes from './routes/goerOnly'
 import nicknamesRoutes from './routes/nicknames'
 import hiddenRoutes from './routes/hidden'
 import suggestionsRoutes from './routes/suggestions'
+import feedbackRoutes from './routes/feedback'
 import accountsRoutes from './routes/accounts'
 import { siteAccessRoutes } from './routes/siteAccess'
 import swapsRoutes from './routes/swaps'
@@ -84,7 +85,7 @@ await app.register(cors, {
 
     cb(new Error(`Origin ${origin} not allowed`), false)
   },
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With'],
   credentials: false,
 })
@@ -106,6 +107,7 @@ await app.register(cors, {
   app.register(nicknamesRoutes)
   app.register(hiddenRoutes)
   app.register(suggestionsRoutes)
+  app.register(feedbackRoutes)
   app.register(appSettingsRoutes)
 
   try {
