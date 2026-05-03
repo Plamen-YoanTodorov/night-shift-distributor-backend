@@ -1,14 +1,15 @@
 import { FastifyInstance } from 'fastify'
 import { db } from '../db'
-import { requireAdmin } from './auth'
+import { requireEditorOrAdmin } from './auth'
 
 type NameDisplayFormat = 'initials' | 'initial-last' | 'first-last' | 'full'
 
-const ALLOWED_KEYS = ['nameDisplayFormat'] as const
+const ALLOWED_KEYS = ['nameDisplayFormat', 'adminNameDisplayFormat'] as const
 type SettingKey = (typeof ALLOWED_KEYS)[number]
 
 const DEFAULTS: Record<SettingKey, string> = {
   nameDisplayFormat: 'first-last',
+  adminNameDisplayFormat: 'full',
 }
 
 export default async function appSettingsRoutes(fastify: FastifyInstance) {
@@ -23,7 +24,7 @@ export default async function appSettingsRoutes(fastify: FastifyInstance) {
     return result
   })
 
-  fastify.put('/api/settings', { preHandler: requireAdmin }, async (req, reply) => {
+  fastify.put('/api/settings', { preHandler: requireEditorOrAdmin }, async (req, reply) => {
     const body = (req.body ?? {}) as Partial<Record<SettingKey, string>>
     const validFormats: NameDisplayFormat[] = ['initials', 'initial-last', 'first-last', 'full']
     const stmt = db.prepare(
@@ -32,6 +33,9 @@ export default async function appSettingsRoutes(fastify: FastifyInstance) {
     const tx = db.transaction(() => {
       if (body.nameDisplayFormat !== undefined && validFormats.includes(body.nameDisplayFormat as NameDisplayFormat)) {
         stmt.run('nameDisplayFormat', body.nameDisplayFormat)
+      }
+      if (body.adminNameDisplayFormat !== undefined && validFormats.includes(body.adminNameDisplayFormat as NameDisplayFormat)) {
+        stmt.run('adminNameDisplayFormat', body.adminNameDisplayFormat)
       }
     })
     tx()
